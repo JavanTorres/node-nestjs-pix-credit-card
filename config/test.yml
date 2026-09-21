@@ -1,0 +1,13 @@
+# Overrides usados pelos testes.
+
+database:
+  name: ${POSTGRES_DB:-payments_test}
+  logging: false
+
+mercadoPago:
+  # Testes nunca falam com o provedor real.
+  accessToken: ''
+
+temporal:
+  # Testes nunca dependem de um servidor Temporal.
+  enabled: false

@@ -1,0 +1,60 @@
+# Configuração base da aplicação.
+#
+# Valores aqui são defaults versionados e NÃO devem conter segredos.
+# `${VAR}` é substituído pela variável de ambiente; `${VAR:-x}` usa `x`
+# quando a variável não está definida. Sem default, o valor é obrigatório
+# e a aplicação não sobe sem ele (ver config.schema.ts).
+
+app:
+  env: ${NODE_ENV:-development}
+  port: ${PORT:-3000}
+  # Origens aceitas pelo CORS. Uma lista de verdade, sem split de string.
+  corsOrigins:
+    - '*'
+
+database:
+  host: ${POSTGRES_HOST:-localhost}
+  port: ${POSTGRES_PORT:-5432}
+  username: ${POSTGRES_USER:-postgres}
+  password: ${POSTGRES_PASSWORD:-postgres}
+  name: ${POSTGRES_DB:-payments}
+  # O schema é versionado em migrations (src/infrastructure/database/
+  # migrations), aplicadas no boot. synchronize fica desligado em todos os
+  # ambientes para que dev e produção criem as tabelas pelo mesmo caminho.
+  synchronize: false
+  migrationsRun: true
+  logging: true
+
+mercadoPago:
+  # Vazio faz a aplicação usar o gateway simulado (FakePaymentGateway).
+  accessToken: ${MERCADO_PAGO_ACCESS_TOKEN:-}
+  # URL que o Mercado Pago chama de volta. Sem default de propósito: o valor
+  # óbvio (http://localhost:3000/...) é inalcançável de fora e seria enviado
+  # ao provedor em silêncio, prometendo um callback que nunca chega. Vazio
+  # omite notification_url da preferência — a ausência fica explícita.
+  notificationUrl: ${MERCADO_PAGO_NOTIFICATION_URL:-}
+  # Segredo da assinatura do webhook (painel → Webhooks). Vazio desliga a
+  # verificação do x-signature: conveniente para disparar o webhook à mão em
+  # desenvolvimento, proibido em produção (ver config.schema.ts).
+  webhookSecret: ${MERCADO_PAGO_WEBHOOK_SECRET:-}
+  # Base pública para onde o Checkout Pro devolve o cliente depois de pagar.
+  # Vazio omite back_urls e auto_return da preferência.
+  backUrl: ${MERCADO_PAGO_BACK_URL:-}
+  timeoutMs: 10000
+
+temporal:
+  # Desligado por padrão: o fluxo de cartão roda dentro da request, como
+  # sempre rodou. Ligado, vira um workflow durável (ver README → Temporal).
+  enabled: ${TEMPORAL_ENABLED:-false}
+  address: ${TEMPORAL_ADDRESS:-localhost:7233}
+  namespace: ${TEMPORAL_NAMESPACE:-default}
+  taskQueue: ${TEMPORAL_TASK_QUEUE:-payments}
+  # true: o worker roda dentro do processo da API.
+  # false: a API só inicia workflows; o worker sobe com `pnpm start:worker`.
+  runWorker: ${TEMPORAL_WORKER_ENABLED:-true}
+  # Espera máxima da request pela preferência; depois responde 202.
+  checkoutWaitMs: 15000
+  # Polling de reconciliação enquanto o callback não chega.
+  pollIntervalSeconds: ${TEMPORAL_POLL_INTERVAL_SECONDS:-30}
+  # Janela em que o workflow acompanha a cobrança.
+  paymentTimeoutMinutes: ${TEMPORAL_PAYMENT_TIMEOUT_MINUTES:-60}

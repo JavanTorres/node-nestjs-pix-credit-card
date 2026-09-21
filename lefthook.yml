@@ -1,0 +1,78 @@
+# Hooks de git. Substitui husky + lint-staged.
+# Documentação: https://lefthook.dev/configuration/
+
+# Sem cores: a UI de commit do VS Code captura a saída do hook mas não
+# interpreta ANSI, e as mensagens de erro chegariam como `[38;2;0;0;0m...`.
+colors: false
+
+# Sem a moldura/banner: sao as linhas que ainda carregam ANSI mesmo com
+# colors: false, e nao acrescentam informacao na caixa de dialogo do editor.
+output:
+  - failure
+  - execution_out
+
+pre-commit:
+  # Sequencial de propósito: eslint --fix e prettier --write escrevem nos
+  # mesmos arquivos, e os testes precisam rodar sobre o código já formatado.
+  jobs:
+    - name: eslint
+      glob: '*.{ts,js,jsx,tsx}'
+      # --no-warn-ignored: arquivos cobertos pelos ignores do eslint.config.mjs
+      # (ex.: commitlint.config.js) chegam aqui por estarem staged e gerariam
+      # aviso inútil.
+      run: pnpm exec eslint --fix --no-warn-ignored {staged_files}
+      stage_fixed: true
+      fail_text: |
+        O ESLint encontrou problemas que não conseguiu corrigir sozinho.
+        Veja os arquivos e as regras listados acima, corrija e refaça o commit.
+
+    - name: prettier
+      glob: '*.{ts,js,jsx,tsx}'
+      run: pnpm exec prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+
+    - name: testes relacionados
+      glob: '*.{ts,js,jsx,tsx}'
+      # Via script do pnpm: o Jest precisa de NODE_OPTIONS=--experimental-vm-modules
+      # para carregar os pacotes ESM do Nest 12.
+      run: pnpm run test:related {staged_files}
+      fail_text: |
+        Testes relacionados aos arquivos alterados falharam.
+        Rode `pnpm test` para ver o relatório completo.
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm exec commitlint --edit {1}
+      fail_text: |
+        A mensagem de commit NAO segue o padrao Conventional Commits.
+
+        Formato:  <tipo>(<escopo opcional>): <descricao>
+        Exemplo:  feat(payment): adicionar integracao com o Mercado Pago
+
+        Tipos aceitos: feat, fix, docs, style, refactor, perf, test,
+                       build, ci, chore, revert
+
+pre-push:
+  # Seguro em paralelo: nenhum dos dois escreve em arquivo.
+  parallel: true
+  jobs:
+    - name: suite completa
+      run: pnpm test
+      fail_text: |
+        A suite de testes falhou. Corrija antes de dar push.
+        Rode `pnpm test` para ver quais casos quebraram.
+
+    - name: typecheck
+      # O ESLint nao verifica tipos e o --findRelatedTests nao cobre arquivo
+      # sem teste: sem isto, codigo que nao compila passaria pelo pre-commit.
+      run: pnpm run typecheck
+      fail_text: |
+        O TypeScript encontrou erros de tipo.
+        Rode `pnpm typecheck` para ver a lista completa.
+
+    - name: historico de commits
+      run: pnpm run commitlint
+      fail_text: |
+        Um ou mais commits do seu branch nao seguem o Conventional Commits.
+        Use `git rebase -i origin/main` para reescrever as mensagens.

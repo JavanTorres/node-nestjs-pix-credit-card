@@ -1,0 +1,24 @@
+# Overrides de produção, mesclados sobre config/default.yml.
+#
+# Contém duas coisas: inversões de comportamento e a remoção dos defaults
+# do default.yml que só fazem sentido em desenvolvimento. Sem `:-`, o valor
+# passa a ser obrigatório e o boot falha se a variável não vier do ambiente.
+
+database:
+  # Nunca deixar o TypeORM alterar o schema em produção: as migrations
+  # rodam no boot (migrationsRun, herdado do default.yml).
+  synchronize: false
+  logging: false
+  # Sem default: apontar para localhost ou usar a conta `postgres` em
+  # produção seria má configuração passando em silêncio.
+  host: ${POSTGRES_HOST}
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+
+mercadoPago:
+  # Em produção a integração real é obrigatória.
+  accessToken: ${MERCADO_PAGO_ACCESS_TOKEN}
+  notificationUrl: ${MERCADO_PAGO_NOTIFICATION_URL}
+  # Sem o segredo, qualquer um que descubra a URL do webhook consegue
+  # marcar uma cobrança como paga. Obrigatório fora de desenvolvimento.
+  webhookSecret: ${MERCADO_PAGO_WEBHOOK_SECRET}

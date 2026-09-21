@@ -1,0 +1,21 @@
+# Debian slim, não Alpine: o worker do Temporal tem um binário nativo
+# (@temporalio/core-bridge) publicado só para Linux glibc. No Alpine (musl) ele
+# não carrega e a API cai na subida com TEMPORAL_ENABLED=true.
+FROM node:24-slim
+WORKDIR /usr/src/app
+
+RUN corepack enable
+
+# 1) Instala dependências
+#
+# --ignore-scripts: o script `prepare` roda `lefthook install`, que exige git
+# e um repositório. Nenhum dos dois existe na imagem, e git hooks são uma
+# preocupação da máquina do desenvolvedor, não do container.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --ignore-scripts
+
+# 2) Configs do TypeScript (necessárias para o ts-node-dev)
+COPY tsconfig*.json ./
+
+EXPOSE 3000
+CMD ["pnpm", "run", "start:dev:ts"]

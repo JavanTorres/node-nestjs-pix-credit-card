@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: payments-postgres
+    restart: on-failure
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payments
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payments"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - payments-net
+
+  adminer:
+    image: adminer:latest
+    container_name: payments-adminer
+    restart: on-failure
+    depends_on:
+      - postgres
+    environment:
+      # O padrão da imagem é "db"; aqui o banco atende pelo nome do serviço.
+      ADMINER_DEFAULT_SERVER: postgres
+    ports:
+      - "8080:8080"
+    networks:
+      - payments-net
+
+  # Servidor Temporal de desenvolvimento: servidor, UI e persistência (SQLite)
+  # num container só. Só é usado com TEMPORAL_ENABLED=true.
+  temporal:
+    image: temporalio/temporal:1.9.1
+    container_name: payments-temporal
+    restart: on-failure
+    # --db-filename persiste os workflows: um `docker compose restart temporal`
+    # não perde pagamento em andamento. Fica no home do usuário da imagem
+    # (uid 1000), que o volume nomeado herda com o dono certo.
+    command:
+      - server
+      - start-dev
+      - --ip=0.0.0.0
+      - --db-filename=/home/temporal/temporal.db
+    ports:
+      - "7233:7233"   # gRPC — onde API e worker conectam
+      - "8233:8233"   # UI — acompanhe os workflows em http://localhost:8233
+    volumes:
+      - temporal-data:/home/temporal
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health", "--address", "localhost:7233"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - payments-net
+
+  app:
+    # Fora do `docker compose up -d` puro: no modo dev a API roda na máquina,
+    # na mesma porta 3000, e o container disputaria com ela. Sobe quando é
+    # pedido: `docker compose --profile docker up --build` (modo Docker).
+    profiles: ["docker"]
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: payments-api
+    restart: on-failure
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Com TEMPORAL_ENABLED=true a API não sobe sem o servidor. Desligado,
+      # custa só um container a mais de pé.
+      temporal:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      # required: false porque o compose valida o env_file de TODOS os
+      # serviços, mesmo num `docker compose up postgres`. Sem isso, quem
+      # segue o modo dev — que não usa este arquivo — não consegue nem subir
+      # o banco enquanto não criar um .env.docker que nunca vai ler.
+      - path: .env.docker
+        required: false
+    environment:
+      # Topologia da rede do compose, não segredo: aqui o banco atende pelo
+      # nome do serviço. Fica no compose, e não no .env.docker, para que a
+      # stack suba corretamente mesmo sem aquele arquivo.
+      - POSTGRES_HOST=postgres
+      # Idem para o Temporal. Inofensivo com TEMPORAL_ENABLED=false.
+      - TEMPORAL_ADDRESS=temporal:7233
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=100
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./:/usr/src/app
+      - api_node_modules:/usr/src/app/node_modules
+    command: pnpm run start:dev:ts
+    networks:
+      - payments-net
+
+volumes:
+  api_node_modules:
+  postgres-data:
+  temporal-data:
+
+networks:
+  payments-net:
+    driver: bridge
